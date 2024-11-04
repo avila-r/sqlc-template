@@ -1,0 +1,38 @@
+name: Deploy app
+
+on:
+    push:
+        branches:
+            - deploy-ec2 
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+
+            - name: Create .env file
+              run: echo -e "SERVER_URL=${{ secrets.SERVER_URL }}\nPOSTGRES_DSN=\"host=${{ secrets.POSTGRES_HOST }} port=${{ secrets.POSTGRES_PORT }} user=${{ secrets.POSTGRES_USER }} password=${{ secrets.POSTGRES_PASSWORD }} dbname=${{ secrets.POSTGRES_DB_NAME }} sslmode=disable TimeZone=UTC\"\nPOSTGRES_DB_NAME=${{ secrets.POSTGRES_DB_NAME }}\nPOSTGRES_USER=${{ secrets.POSTGRES_USER }}\nPOSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+            
+            - name: Login to Dockerhub
+              run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+
+            - name: Build image
+              run: docker build -t ${{ secrets.IMAGE_NAME }}
+
+            - name: Push image to Docker Hub
+              run: docker push ${{ secrets.IMAGE_NAME }}:latest
+
+    deploy:
+        needs: build
+        runs-on: self-hosted
+        steps:
+            - name: Pull image
+              run: docker pull ${{ secrets.IMAGE_NAME }}:latest
+
+            - name: Clean old containers
+              run: docker rm -rf ${{ secrets.CONTAINER_NAME }}
+
+            - name: Run container
+              run: docker run -d -p ${{ secrets.CONTAINER_PORT }} --name ${{ secrets.CONTAINER_NAME }} aviladev/go-app:latest
